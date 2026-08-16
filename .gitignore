@@ -1,3 +1,101 @@
+# ============================================================
+# Python
+# ============================================================
+
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Packaging / build artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Test / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+
+
+# ============================================================
+# Environment / secrets
+# ============================================================
+
+.env
+.env.*
+!.env.example
+
+
+# ============================================================
+# Local data / scraper output
+# ============================================================
+
 data/raw/
-data/normalized/*.parquet
-data/manifests/collection_runs.csv
+data/processed/
+data/cache/
+data/tmp/
+
+# Keep directory structure if desired
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/cache/.gitkeep
+!data/tmp/.gitkeep
+
+
+# ============================================================
+# Logs
+# ============================================================
+
+*.log
+logs/
+
+
+# ============================================================
+# macOS
+# ============================================================
+
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+
+# ============================================================
+# Editors / IDEs
+# ============================================================
+
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+
+# ============================================================
+# OS / temporary files
+# ============================================================
+
+*.tmp
+*.temp
+*.bak
+*.orig
+
+
+# ============================================================
+# Jupyter
+# ============================================================
+
+.ipynb_checkpoints/
