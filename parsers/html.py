@@ -6,6 +6,14 @@ from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 
 
+KNOWN_JSON_SCRIPT_IDS = {
+    "__NEXT_DATA__",
+    "__NUXT_DATA__",
+    "__APOLLO_STATE__",
+    "node-apollo-state",
+}
+
+
 def soup_from_html(html: bytes | str) -> BeautifulSoup:
     """Create a BeautifulSoup document from HTML bytes or text."""
     return BeautifulSoup(html, "html.parser")
@@ -39,7 +47,7 @@ def extract_links(
     results: list[dict[str, str]] = []
 
     for element in soup.find_all("a", href=True):
-        href = urljoin(source_url, element["href"])
+        href = urljoin(source_url, str(element["href"]))
         text = element.get_text(" ", strip=True)
 
         results.append(
@@ -74,7 +82,7 @@ def extract_meta(
         content = element.get("content")
 
         if name and content:
-            metadata[name.strip().lower()] = content.strip()
+            metadata[str(name).strip().lower()] = str(content).strip()
 
     return metadata
 
@@ -83,29 +91,84 @@ def extract_json_scripts(
     html: bytes | str,
 ) -> list[str]:
     """
-    Extract the raw contents of script elements that may contain JSON.
+    Extract raw contents of scripts that may contain JSON.
 
-    JSON parsing itself is deliberately handled by parsers/embedded_json.py.
+    We deliberately do not require one specific retailer/framework
+    script ID. Retailers frequently change their embedded-state names.
+
+    Recognized sources include:
+      - application/json scripts
+      - __NEXT_DATA__
+      - __NUXT_DATA__
+      - __APOLLO_STATE__
+      - node-apollo-state
     """
     soup = soup_from_html(html)
 
     results: list[str] = []
 
     for script in soup.find_all("script"):
+        script_id = script.get("id")
         script_type = (script.get("type") or "").lower()
 
-        if (
-            "json" in script_type
-            or script.get("id") in {
-                "__NEXT_DATA__",
-                "__NUXT_DATA__",
-                "__APOLLO_STATE__",
-            }
-        ):
-            content = script.string or script.get_text()
+        is_json_type = (
+            script_type == "application/json"
+            or script_type.endswith("+json")
+            or "json" in script_type
+        )
 
-            if content and content.strip():
-                results.append(content.strip())
+        is_known_id = script_id in KNOWN_JSON_SCRIPT_IDS
+
+        if not (is_json_type or is_known_id):
+            continue
+
+        content = script.string or script.get_text()
+
+        if content and content.strip():
+            results.append(content.strip())
+
+    return results
+
+
+def extract_json_scripts_with_ids(
+    html: bytes | str,
+) -> list[dict[str, str]]:
+    """
+    Extract JSON-bearing scripts while retaining their script IDs.
+
+    This is useful for debugging retailer-specific embedded state.
+    """
+    soup = soup_from_html(html)
+
+    results: list[dict[str, str]] = []
+
+    for script in soup.find_all("script"):
+        script_id = script.get("id")
+        script_type = (script.get("type") or "").lower()
+
+        is_json_type = (
+            script_type == "application/json"
+            or script_type.endswith("+json")
+            or "json" in script_type
+        )
+
+        is_known_id = script_id in KNOWN_JSON_SCRIPT_IDS
+
+        if not (is_json_type or is_known_id):
+            continue
+
+        content = script.string or script.get_text()
+
+        if not content or not content.strip():
+            continue
+
+        results.append(
+            {
+                "id": str(script_id or ""),
+                "type": script_type,
+                "content": content.strip(),
+            }
+        )
 
     return results
 
