@@ -1,0 +1,48 @@
+retailers:
+  - name: Walmart
+    enabled: true
+    domains:
+      - walmart.com
+    source_types:
+      - Store Locator
+      - Product Search
+
+  - name: Albertsons
+    enabled: true
+    domains:
+      - albertsons.com
+    source_types:
+      - Store Locator
+      - Product Catalog
+
+  - name: Target
+    enabled: true
+    domains:
+      - target.com
+    source_types:
+      - Store Locator
+      - Product Catalog
+
+  - name: Publix
+    enabled: true
+    domains:
+      - publix.com
+    source_types:
+      - Store Locator
+      - Product Catalog
+
+  - name: Aldi
+    enabled: true
+    domains:
+      - aldi.us
+    source_types:
+      - Store Locator
+      - Product Catalog
+
+  - name: Sprouts
+    enabled: true
+    domains:
+      - sprouts.com
+    source_types:
+      - Store Locator
+      - Product Catalog

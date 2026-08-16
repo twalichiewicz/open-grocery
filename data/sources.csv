@@ -1,0 +1,25 @@
+retailer,source_name,source_type,url,http_method,authentication,parameters,response_format,product_data,pricing_data,store_data,promotion_data,inventory_data,upc_gtin,store_level_data,geographic_parameters,request_frequency,requires_session,requires_account,requires_javascript,bot_protection,observed_response,first_discovered,last_verified,status,notes
+Walmart,Store Directory,store_locator,https://www.walmart.com/store/directory,GET,unknown,,,,,,,,,,,,,,,,unknown,2026-08-16,2026-08-16,candidate,Canonical Walmart store directory
+Walmart,Product Search,product_search,https://www.walmart.com/search?q=milk,GET,unknown,q,html,,,,,,,,,,,,,unknown,unknown,unknown,2026-08-16,2026-08-16,candidate,Canonical product search URL
+Target,Store Locator,store_locator,https://www.target.com/store-locator/find-stores,GET,unknown,,,,,,,,,,,,,,,,unknown,2026-08-16,2026-08-16,candidate,Canonical Target store locator
+Target,Grocery Catalog,product_catalog,https://www.target.com/c/grocery/-/N-5xt1a,GET,unknown,,,,,,,,,,,,,,,,unknown,2026-08-16,2026-08-16,candidate,Canonical grocery category
+Target,Shop All Categories,product_catalog,https://www.target.com/c/shop-all-categories/-/N-5xsxf,GET,unknown,,,,,,,,,,,,,,,,unknown,2026-08-16,2026-08-16,candidate,General category discovery source
+Albertsons,Store Locator,store_locator,https://www.albertsons.com/erums/store/prebook,GET,unknown,,,,,,,,,,,,,,,,unknown,2026-08-16,2026-08-16,candidate,Potential store locator
+Albertsons,Product Search,product_search,https://local.albertsons.com/search.html,GET,unknown,,,,,,,,,,,,,,,,unknown,2026-08-16,2026-08-16,candidate,Albertsons local search endpoint
+Albertsons,Grocery Catalog,product_catalog,https://www.albertsons.com/shop/aisles/dairy-eggs-cheese.html?loc=177,GET,unknown,loc,html,,,,,,,,,,,,,unknown,unknown,unknown,2026-08-16,2026-08-16,candidate,Representative grocery category
+Albertsons,Beverages Catalog,product_catalog,https://www.albertsons.com/shop/aisles/beverages.html?loc=177,GET,unknown,loc,html,,,,,,,,,,,,,unknown,unknown,unknown,2026-08-16,2026-08-16,candidate,Representative grocery category
+Albertsons,Bread Bakery Catalog,product_catalog,https://www.albertsons.com/shop/aisles/bread-bakery.html?loc=177,GET,unknown,loc,html,,,,,,,,,,,,,unknown,unknown,unknown,2026-08-16,2026-08-16,candidate,Representative grocery category
+Publix,Store Locator,store_locator,https://www.publix.com/locations,GET,unknown,,,,,,,,,,,,,,,,unknown,2026-08-16,2026-08-16,candidate,Canonical Publix store locator
+Publix,Product Catalog,product_catalog,https://www.publix.com/products-services,GET,unknown,,,,,,,,,,,,,,,,unknown,2026-08-16,2026-08-16,candidate,Canonical Publix products source
+Publix,Online Shopping,product_catalog,https://www.publix.com/shop-online/in-store-pickup/meat-and-cheese/aa5a1fa4-67c6-46a6-8369-b2b8c6d0f4b5,GET,unknown,,,,,,,,,,,,,,,,unknown,2026-08-16,2026-08-16,candidate,Representative online shopping source
+Aldi,Store Locator,store_locator,https://info.aldi.us/stores,GET,unknown,,,,,,,,,,,,,,,,unknown,2026-08-16,2026-08-16,candidate,Canonical Aldi store information
+Aldi,Product Catalog,product_catalog,https://www.aldi.us/store/aldi/pages/explore-all-products,GET,unknown,,,,,,,,,,,,,,,,unknown,2026-08-16,2026-08-16,candidate,Aldi product discovery page
+Aldi,Grocery Catalog,product_catalog,https://www.aldi.us/store/aldi/pages/pantry-essentials,GET,unknown,,,,,,,,,,,,,,,,unknown,2026-08-16,2026-08-16,candidate,Representative grocery category
+Aldi,Dairy and Eggs Catalog,product_catalog,https://www.aldi.us/store/aldi/pages/dairy-and-eggs,GET,unknown,,,,,,,,,,,,,,,,unknown,2026-08-16,2026-08-16,candidate,Representative grocery category
+Aldi,Fresh Produce Catalog,product_catalog,https://www.aldi.us/store/aldi/pages/fresh-produce,GET,unknown,,,,,,,,,,,,,,,,unknown,2026-08-16,2026-08-16,candidate,Representative grocery category
+Aldi,Product Example,product,https://www.aldi.us/store/aldi/products/24519630-park-street-deli-turkey-wrap-8-oz,GET,unknown,,,,,,,,,,,,,,,,unknown,2026-08-16,2026-08-16,candidate,Representative product detail URL
+Sprouts,Store Locator,store_locator,https://www.sprouts.com/stores/,GET,unknown,,,,,,,,,,,,,,,,unknown,2026-08-16,2026-08-16,candidate,Canonical Sprouts store locator
+Sprouts,Online Grocery Catalog,product_catalog,https://shop.sprouts.com/store/sprouts/collections/n-grocery-aisles,GET,unknown,,,,,,,,,,,,,,,,unknown,2026-08-16,2026-08-16,candidate,Canonical online grocery collection
+Sprouts,Dairy Catalog,product_catalog,https://shop.sprouts.com/store/sprouts/collections/n-dairy,GET,unknown,,,,,,,,,,,,,,,,unknown,2026-08-16,2026-08-16,candidate,Representative grocery category
+Sprouts,Produce Catalog,product_catalog,https://shop.sprouts.com/store/sprouts/collections/n-produce,GET,unknown,,,,,,,,,,,,,,,,unknown,2026-08-16,2026-08-16,candidate,Representative grocery category
+Sprouts,Meat Seafood Catalog,product_catalog,https://shop.sprouts.com/store/sprouts/collections/n-meat-seafood,GET,unknown,,,,,,,,,,,,,,,,unknown,2026-08-16,2026-08-16,candidate,Representative grocery category

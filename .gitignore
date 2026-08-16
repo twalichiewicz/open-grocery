@@ -1,0 +1,3 @@
+data/raw/
+data/normalized/*.parquet
+data/manifests/collection_runs.csv

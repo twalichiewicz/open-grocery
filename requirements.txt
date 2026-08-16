@@ -1,0 +1,8 @@
+httpx
+beautifulsoup4
+pandas
+lxml
+python-dateutil
+requests>=2.31
+pytest>=8.0
+ruff>=0.6
