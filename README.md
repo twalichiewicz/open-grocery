@@ -16,8 +16,8 @@ Each stage is a standalone script:
 python3 scripts/discover_sources.py   # evaluate retailer sources → data/sources_discovered.csv
 python3 scripts/collect.py            # fetch raw HTML → data/raw/ (+ .metadata.json sidecars)
 python3 scripts/parse.py              # extract products → data/normalized/products.jsonl
-python3 scripts/validate.py           # sanity-check output
-python3 db/load.py                    # persist to database (schema in db/schema.sql)
+[SOON] python3 scripts/validate.py           # sanity-check output
+[SOON] python3 db/load.py                    # persist to database (schema in db/schema.sql)
 ```
 
 `parse.py` tries three extraction strategies per page, in order of reliability:
