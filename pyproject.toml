@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,6 +7,11 @@ name = "grocery-price-index"
 version = "0.1.0"
 description = "Open grocery price and store data collection project"
 readme = "README.md"
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE", "DATA_LICENSE"]
+authors = [
+    { name = "Thomas Walichiewicz", email = "hey@thomas.design" },
+]
 requires-python = ">=3.11"
 
 dependencies = [
