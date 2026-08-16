@@ -6,7 +6,12 @@ import argparse
 import csv
 import hashlib
 from pathlib import Path
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import (
+    parse_qsl,
+    urlencode,
+    urlsplit,
+    urlunsplit,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -59,11 +64,9 @@ REQUIRED_COLUMNS = [
     "notes",
 ]
 
-OUTPUT_COLUMNS = REQUIRED_COLUMNS + ["source_id"]
-
 
 def canonicalize_url(url: str) -> str:
-    """Normalize a URL and remove known tracking parameters."""
+    """Remove tracking parameters while preserving functional parameters."""
     parts = urlsplit(url.strip())
 
     query = [
@@ -86,11 +89,14 @@ def canonicalize_url(url: str) -> str:
     )
 
 
-def source_id(retailer: str, source_type: str, url: str) -> str:
-    """Generate a stable identifier for a canonical source."""
+def source_id(
+    retailer: str,
+    source_type: str,
+    url: str,
+) -> str:
     value = (
-        f"{retailer.strip().lower()}|"
-        f"{source_type.strip().lower()}|"
+        f"{retailer}|"
+        f"{source_type}|"
         f"{canonicalize_url(url)}"
     )
 
@@ -99,8 +105,9 @@ def source_id(retailer: str, source_type: str, url: str) -> str:
     ).hexdigest()[:16]
 
 
-def load_sources(path: Path) -> list[dict[str, str]]:
-    """Load source candidates from a CSV file."""
+def load_sources(
+    path: Path,
+) -> list[dict[str, str]]:
     with path.open(
         newline="",
         encoding="utf-8",
@@ -127,8 +134,7 @@ def load_sources(path: Path) -> list[dict[str, str]]:
         return list(reader)
 
 
-def _normalize_value(value: object) -> str:
-    """Convert CSV values into stable string values."""
+def _normalize_value(value) -> str:
     if value is None:
         return ""
 
@@ -142,8 +148,33 @@ def _normalize_value(value: object) -> str:
     return str(value).strip()
 
 
-def normalize_row(row: dict[str, object]) -> dict[str, str]:
-    """Normalize a source row and generate its stable source ID."""
+def normalize_source_type(value: str) -> str:
+    """
+    Normalize human-readable source types to the canonical vocabulary.
+
+    Examples:
+        Product Catalog -> product_catalog
+        Store Locator   -> store_locator
+        Product Search  -> product_search
+    """
+    value = _normalize_value(value)
+
+    if not value:
+        return ""
+
+    normalized = value.lower().replace("-", "_")
+    normalized = "_".join(
+        normalized.split()
+    )
+
+    return normalized
+
+
+def normalize_http_method(value: str) -> str:
+    return _normalize_value(value).upper()
+
+
+def normalize_row(row: dict[str, str]) -> dict[str, str]:
     normalized = {
         key: _normalize_value(value)
         for key, value in row.items()
@@ -153,14 +184,26 @@ def normalize_row(row: dict[str, object]) -> dict[str, str]:
     for field in REQUIRED_COLUMNS:
         normalized.setdefault(field, "")
 
-    # Normalize the URL before generating the ID.
-    normalized["url"] = canonicalize_url(normalized["url"])
+    # Normalize source type to the canonical vocabulary.
+    source_type = normalized["source_type"].lower().replace("-", "_").replace(" ", "_")
+    normalized["source_type"] = source_type
 
+    # Normalize HTTP method.
+    normalized["http_method"] = normalized["http_method"].upper()
+
+    # Assign a deterministic ID before validation/deduplication.
     normalized["source_id"] = source_id(
         normalized["retailer"],
         normalized["source_type"],
         normalized["url"],
     )
+
+    # Invalid source types should immediately require review.
+    if normalized["source_type"] not in SOURCE_TYPES:
+        normalized["status"] = "needs_review"
+        normalized["notes"] = (
+            f"unsupported source_type: {normalized['source_type']}"
+        )
 
     return normalized
 
@@ -173,7 +216,13 @@ def deduplicate(
     result: list[dict[str, str]] = []
 
     for row in rows:
-        key = row["source_id"]
+        key = source_id(
+            row["retailer"],
+            row["source_type"],
+            row["url"],
+        )
+
+        row["source_id"] = key
 
         if key in seen:
             continue
@@ -185,7 +234,6 @@ def deduplicate(
 
 
 def validate_row(row: dict[str, str]) -> list[str]:
-    """Return validation errors for a normalized source row."""
     errors: list[str] = []
 
     if not row["retailer"]:
@@ -194,32 +242,26 @@ def validate_row(row: dict[str, str]) -> list[str]:
     if not row["source_name"]:
         errors.append("missing source_name")
 
-    if not row["source_type"]:
-        errors.append("missing source_type")
-    elif row["source_type"] not in SOURCE_TYPES:
+    if not row["url"]:
+        errors.append("missing url")
+
+    if row["source_type"] not in SOURCE_TYPES:
         errors.append(
             f"unsupported source_type: {row['source_type']}"
         )
 
-    if not row["url"]:
-        errors.append("missing url")
-    else:
-        parts = urlsplit(row["url"])
-
-        if parts.scheme not in {"http", "https"}:
-            errors.append("URL must use http or https")
-
-        if not parts.netloc:
-            errors.append("URL has no hostname")
-
-    if not row["http_method"]:
-        errors.append("missing http_method")
-    elif row["http_method"].upper() not in {"GET", "POST"}:
+    if row["http_method"] not in {"GET", "POST"}:
         errors.append(
             f"unsupported HTTP method: {row['http_method']}"
         )
-    else:
-        row["http_method"] = row["http_method"].upper()
+
+    parts = urlsplit(row["url"])
+
+    if parts.scheme not in {"http", "https"}:
+        errors.append("URL must use http or https")
+
+    if not parts.netloc:
+        errors.append("URL has no hostname")
 
     return errors
 
@@ -228,7 +270,6 @@ def discover(
     input_path: Path = DEFAULT_INPUT,
     output_path: Path = DEFAULT_OUTPUT,
 ) -> tuple[int, int]:
-    """Load, normalize, deduplicate, validate, and write sources."""
     rows = load_sources(input_path)
 
     normalized = [
@@ -238,6 +279,7 @@ def discover(
 
     unique = deduplicate(normalized)
 
+    valid: list[dict[str, str]] = []
     invalid_count = 0
 
     for row in unique:
@@ -246,17 +288,21 @@ def discover(
         if errors:
             row["status"] = "needs_review"
 
-            existing_notes = row["notes"].strip()
+            existing_notes = row.get("notes", "").strip()
+            validation_notes = "; ".join(errors)
 
-            if existing_notes:
-                row["notes"] = (
-                    f"{existing_notes}; "
-                    f"{'; '.join(errors)}"
-                )
+            if existing_notes and validation_notes:
+                row["notes"] = f"{existing_notes}; {validation_notes}"
             else:
-                row["notes"] = "; ".join(errors)
+                row["notes"] = existing_notes or validation_notes
 
             invalid_count += 1
+
+        valid.append(row)
+
+    fieldnames = REQUIRED_COLUMNS + [
+        "source_id"
+    ]
 
     output_path.parent.mkdir(
         parents=True,
@@ -270,20 +316,20 @@ def discover(
     ) as handle:
         writer = csv.DictWriter(
             handle,
-            fieldnames=OUTPUT_COLUMNS,
+            fieldnames=fieldnames,
             extrasaction="ignore",
         )
 
         writer.writeheader()
-        writer.writerows(unique)
+        writer.writerows(valid)
 
-    return len(unique), invalid_count
+    return len(valid), invalid_count
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Normalize, deduplicate, and validate "
+            "Normalize and deduplicate "
             "grocery source candidates."
         )
     )
@@ -304,18 +350,22 @@ def main() -> int:
 
     args = parser.parse_args()
 
-    try:
-        total, invalid = discover(
-            args.input,
-            args.output,
-        )
-    except (OSError, ValueError, csv.Error) as exc:
-        print(f"Error: {exc}")
-        return 1
+    total, invalid = discover(
+        args.input,
+        args.output,
+    )
 
-    print(f"Sources written: {total}")
-    print(f"Sources requiring review: {invalid}")
-    print(f"Output: {args.output}")
+    print(
+        f"Sources written: {total}"
+    )
+
+    print(
+        f"Sources requiring review: {invalid}"
+    )
+
+    print(
+        f"Output: {args.output}"
+    )
 
     return 0
 
