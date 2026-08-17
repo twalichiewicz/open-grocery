@@ -47,8 +47,6 @@ GTIN_KEYS = (
 SKU_KEYS = (
     "sku",
     "itemNumber",
-    "itemId",
-    "productId",
 )
 
 
@@ -392,23 +390,7 @@ def _is_product_candidate(
     gtin: Any,
     sku: Any,
 ) -> bool:
-    """
-    Decide whether an embedded JSON object represents a product.
-
-    Strong signals:
-      - a valid-looking GTIN field;
-      - a SKU/item number together with a product-like name;
-      - scalar or nested price data;
-      - a known product-bearing __typename.
-
-    A bare productId is intentionally weaker than it was previously:
-    application objects routinely use productId-like identifiers for
-    navigation and analytics state.
-    """
-    if not isinstance(
-        product_name,
-        str,
-    ):
+    if not isinstance(product_name, str):
         return False
 
     if not product_name.strip():
@@ -420,51 +402,66 @@ def _is_product_candidate(
     ):
         return False
 
-    if gtin not in (
-        None,
-        "",
+    # Explicit retailer/product model types are the strongest signal.
+    if _has_allowed_typename(value):
+        return True
+
+    # A real GTIN is strong identity evidence. normalize_gtin() will
+    # perform the actual validation later.
+    if gtin not in (None, ""):
+        return True
+
+    # Product-specific structural signals.
+    structural_signals = (
+        "brand",
+        "brandName",
+        "manufacturer",
+        "description",
+        "productDescription",
+        "image",
+        "imageUrl",
+        "productUrl",
+        "url",
+        "offers",
+        "offer",
+        "pricing",
+        "priceInfo",
+        "inventory",
+        "inventoryStatus",
+        "stockStatus",
+        "availability",
+    )
+
+    structural_count = sum(
+        1
+        for key in structural_signals
+        if value.get(key) not in (
+            None,
+            "",
+            [],
+            {},
+        )
+    )
+
+    # A SKU plus one independent product characteristic is enough.
+    #
+    # Importantly, productId/itemId alone is NOT enough.
+    if sku not in (None, "") and structural_count >= 1:
+        return True
+
+    # Nested Instacart price + another product characteristic.
+    if (
+        _has_nested_price_signal(value)
+        and structural_count >= 1
     ):
         return True
 
-    if _has_scalar_price_signal(
-        value
+    # Scalar price + another product characteristic.
+    if (
+        _has_scalar_price_signal(value)
+        and structural_count >= 1
     ):
         return True
-
-    if _has_nested_price_signal(
-        value
-    ):
-        return True
-
-    if _has_allowed_typename(
-        value
-    ):
-        return True
-
-    if sku not in (
-        None,
-        "",
-    ):
-        # SKU alone is not enough. Require at least one additional
-        # product signal.
-        for key in (
-            "brand",
-            "brandName",
-            "manufacturer",
-            "description",
-            "productDescription",
-            "image",
-            "imageUrl",
-            "url",
-            "productUrl",
-        ):
-            if value.get(key) not in (
-                None,
-                "",
-                [],
-                {},
-            ):
-                return True
 
     return False
 
