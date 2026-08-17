@@ -17,6 +17,63 @@ PRODUCT_TYPENAME_PREFIXES = (
 )
 
 
+PRODUCT_NAME_KEYS = (
+    "productName",
+    "product_name",
+    "name",
+    "title",
+    "displayName",
+)
+
+
+BRAND_KEYS = (
+    "brand",
+    "brandName",
+    "manufacturer",
+)
+
+
+GTIN_KEYS = (
+    "gtin",
+    "gtin12",
+    "gtin13",
+    "gtin14",
+    "gtin8",
+    "upc",
+    "upcCode",
+)
+
+
+SKU_KEYS = (
+    "sku",
+    "itemNumber",
+    "itemId",
+    "productId",
+)
+
+
+PRICE_KEYS = (
+    "price",
+    "currentPrice",
+    "salePrice",
+    "regularPrice",
+)
+
+
+CURRENCY_KEYS = (
+    "currency",
+    "priceCurrency",
+    "currencyCode",
+)
+
+
+AVAILABILITY_KEYS = (
+    "availability",
+    "stockStatus",
+    "inventoryStatus",
+)
+
+
 def parse_json_scripts(
     scripts: list[str],
 ) -> list[Any]:
@@ -58,48 +115,207 @@ def _first(
     return None
 
 
-def _extract_offer(value: Any) -> dict[str, Any]:
+def _scalar(
+    value: Any,
+) -> bool:
+    return isinstance(
+        value,
+        (
+            str,
+            int,
+            float,
+        ),
+    )
+
+
+def _extract_brand(
+    value: Any,
+) -> Any:
     if isinstance(value, dict):
+        return _first(
+            value,
+            ("name", "brandName"),
+        )
+
+    return value
+
+
+def _extract_nested_instacart_price(
+    value: Any,
+) -> tuple[Any, Any]:
+    """
+    Extract the scalar price/currency from an Instacart item object.
+
+    Typical shape:
+
+        price.viewSection.itemCard.priceString
+
+    with fallbacks:
+
+        price.viewSection.itemCard.fullPriceString
+        price.viewSection.badge.trackingProperties.price
+    """
+    price_object = value.get("price")
+
+    if not isinstance(price_object, dict):
+        return (
+            price_object,
+            value.get("currency"),
+        )
+
+    view_section = price_object.get(
+        "viewSection"
+    )
+
+    if not isinstance(
+        view_section,
+        dict,
+    ):
+        return (
+            None,
+            None,
+        )
+
+    item_card = view_section.get(
+        "itemCard"
+    )
+
+    if isinstance(
+        item_card,
+        dict,
+    ):
+        price_string = item_card.get(
+            "priceString"
+        )
+
+        if _scalar(price_string):
+            return (
+                price_string,
+                item_card.get(
+                    "currency"
+                ),
+            )
+
+        full_price_string = (
+            item_card.get(
+                "fullPriceString"
+            )
+        )
+
+        if _scalar(full_price_string):
+            return (
+                full_price_string,
+                item_card.get(
+                    "currency"
+                ),
+            )
+
+    badge = view_section.get(
+        "badge"
+    )
+
+    if isinstance(
+        badge,
+        dict,
+    ):
+        tracking_properties = (
+            badge.get(
+                "trackingProperties"
+            )
+        )
+
+        if isinstance(
+            tracking_properties,
+            dict,
+        ):
+            price = tracking_properties.get(
+                "price"
+            )
+
+            if _scalar(price):
+                return (
+                    price,
+                    tracking_properties.get(
+                        "currency"
+                    ),
+                )
+
+    return (
+        None,
+        None,
+    )
+
+
+def _extract_offer(
+    value: Any,
+) -> dict[str, Any]:
+    if isinstance(
+        value,
+        dict,
+    ):
         return value
 
-    if isinstance(value, list):
+    if isinstance(
+        value,
+        list,
+    ):
         for item in value:
-            if isinstance(item, dict):
+            if isinstance(
+                item,
+                dict,
+            ):
                 return item
 
     return {}
 
 
-def _has_price_signal(value: dict[str, Any]) -> bool:
-    """
-    Return whether the object contains a scalar price-like field.
-
-    Nested Instacart price objects are intentionally not handled here;
-    that is the extraction-quality pass that follows this safety/precision
-    pass. The important distinction here is that a generic object named
-    "title" is not sufficient evidence of being a product.
-    """
-    for key in (
-        "price",
-        "currentPrice",
-        "salePrice",
-        "regularPrice",
-    ):
+def _has_scalar_price_signal(
+    value: dict[str, Any],
+) -> bool:
+    for key in PRICE_KEYS:
         candidate = value.get(key)
 
-        if candidate in (None, ""):
-            continue
-
-        if isinstance(candidate, (str, int, float)):
+        if _scalar(candidate):
             return True
 
     return False
 
 
-def _has_allowed_typename(value: dict[str, Any]) -> bool:
-    typename = value.get("__typename")
+def _has_nested_price_signal(
+    value: dict[str, Any],
+) -> bool:
+    price = value.get(
+        "price"
+    )
 
-    if not isinstance(typename, str):
+    if not isinstance(
+        price,
+        dict,
+    ):
+        return False
+
+    nested_price, _ = (
+        _extract_nested_instacart_price(
+            value
+        )
+    )
+
+    return _scalar(
+        nested_price
+    )
+
+
+def _has_allowed_typename(
+    value: dict[str, Any],
+) -> bool:
+    typename = value.get(
+        "__typename"
+    )
+
+    if not isinstance(
+        typename,
+        str,
+    ):
         return False
 
     return any(
@@ -108,31 +324,147 @@ def _has_allowed_typename(value: dict[str, Any]) -> bool:
     )
 
 
+def _looks_like_navigation(
+    value: dict[str, Any],
+    product_name: str,
+) -> bool:
+    """
+    Reject common navigation/content objects that happen to contain
+    product-ish identifiers.
+
+    This is deliberately conservative: these strings are strong signals
+    that an object is site chrome rather than a sellable item.
+    """
+    normalized = product_name.strip().lower()
+
+    navigation_terms = (
+        "navigation.",
+        "navigation ",
+        "store locator",
+        "locations",
+        "products & services",
+        "products and services",
+        "order deli",
+        "find an ",
+        "find a ",
+        "menu",
+        "category",
+        "department",
+        "service type",
+        "live_link",
+    )
+
+    if any(
+        term in normalized
+        for term in navigation_terms
+    ):
+        return True
+
+    typename = value.get(
+        "__typename"
+    )
+
+    if isinstance(
+        typename,
+        str,
+    ):
+        lower_typename = typename.lower()
+
+        if any(
+            term in lower_typename
+            for term in (
+                "navigation",
+                "menu",
+                "category",
+                "location",
+                "service",
+            )
+        ):
+            return True
+
+    return False
+
+
 def _is_product_candidate(
     value: dict[str, Any],
     *,
+    product_name: Any,
     gtin: Any,
     sku: Any,
 ) -> bool:
     """
-    Require evidence beyond a generic name/title field.
+    Decide whether an embedded JSON object represents a product.
 
-    A product candidate must have:
-      - a SKU or GTIN, or
-      - a price-like field, or
+    Strong signals:
+      - a valid-looking GTIN field;
+      - a SKU/item number together with a product-like name;
+      - scalar or nested price data;
       - a known product-bearing __typename.
+
+    A bare productId is intentionally weaker than it was previously:
+    application objects routinely use productId-like identifiers for
+    navigation and analytics state.
     """
-    if gtin not in (None, ""):
+    if not isinstance(
+        product_name,
+        str,
+    ):
+        return False
+
+    if not product_name.strip():
+        return False
+
+    if _looks_like_navigation(
+        value,
+        product_name,
+    ):
+        return False
+
+    if gtin not in (
+        None,
+        "",
+    ):
         return True
 
-    if sku not in (None, ""):
+    if _has_scalar_price_signal(
+        value
+    ):
         return True
 
-    if _has_price_signal(value):
+    if _has_nested_price_signal(
+        value
+    ):
         return True
 
-    if _has_allowed_typename(value):
+    if _has_allowed_typename(
+        value
+    ):
         return True
+
+    if sku not in (
+        None,
+        "",
+    ):
+        # SKU alone is not enough. Require at least one additional
+        # product signal.
+        for key in (
+            "brand",
+            "brandName",
+            "manufacturer",
+            "description",
+            "productDescription",
+            "image",
+            "imageUrl",
+            "url",
+            "productUrl",
+        ):
+            if value.get(key) not in (
+                None,
+                "",
+                [],
+                {},
+            ):
+                return True
 
     return False
 
@@ -143,61 +475,35 @@ def product_from_dict(
 ) -> dict[str, Any] | None:
     """
     Convert a JSON object that looks like a product into our common record.
-
-    A name/title alone is not sufficient evidence. Embedded application
-    JSON contains navigation labels, analytics events, localization data,
-    and other objects that happen to contain those fields.
     """
     product_name = _first(
         value,
-        (
-            "productName",
-            "product_name",
-            "name",
-            "title",
-            "displayName",
-        ),
+        PRODUCT_NAME_KEYS,
     )
 
-    if not product_name or not isinstance(product_name, str):
+    if not product_name:
         return None
 
-    brand = _first(
-        value,
-        (
-            "brand",
-            "brandName",
-            "manufacturer",
-        ),
+    brand = _extract_brand(
+        _first(
+            value,
+            BRAND_KEYS,
+        )
     )
-
-    if isinstance(brand, dict):
-        brand = brand.get("name")
 
     gtin = _first(
         value,
-        (
-            "gtin",
-            "gtin12",
-            "gtin13",
-            "gtin14",
-            "upc",
-            "upcCode",
-        ),
+        GTIN_KEYS,
     )
 
     sku = _first(
         value,
-        (
-            "sku",
-            "itemNumber",
-            "itemId",
-            "productId",
-        ),
+        SKU_KEYS,
     )
 
     if not _is_product_candidate(
         value,
+        product_name=product_name,
         gtin=gtin,
         sku=sku,
     ):
@@ -217,61 +523,55 @@ def product_from_dict(
 
     price = _first(
         value,
-        (
-            "price",
-            "currentPrice",
-            "salePrice",
-            "regularPrice",
-        ),
+        PRICE_KEYS,
     )
 
     currency = _first(
         value,
-        (
-            "currency",
-            "priceCurrency",
-            "currencyCode",
-        ),
+        CURRENCY_KEYS,
     )
+
+    # Instacart's price field is an object rather than a scalar.
+    if isinstance(
+        value.get("price"),
+        dict,
+    ):
+        nested_price, nested_currency = (
+            _extract_nested_instacart_price(
+                value
+            )
+        )
+
+        if price is None or isinstance(
+            price,
+            dict,
+        ):
+            price = nested_price
+
+        if currency is None:
+            currency = nested_currency
 
     if price is None:
         price = _first(
             offer,
-            (
-                "price",
-                "currentPrice",
-                "salePrice",
-                "regularPrice",
-            ),
+            PRICE_KEYS,
         )
 
     if currency is None:
         currency = _first(
             offer,
-            (
-                "currency",
-                "priceCurrency",
-                "currencyCode",
-            ),
+            CURRENCY_KEYS,
         )
 
     availability = _first(
         value,
-        (
-            "availability",
-            "stockStatus",
-            "inventoryStatus",
-        ),
+        AVAILABILITY_KEYS,
     )
 
     if availability is None:
         availability = _first(
             offer,
-            (
-                "availability",
-                "stockStatus",
-                "inventoryStatus",
-            ),
+            AVAILABILITY_KEYS,
         )
 
     return {
@@ -286,6 +586,53 @@ def product_from_dict(
     }
 
 
+def _identity(
+    product: dict[str, Any],
+) -> tuple[str, str]:
+    """
+    Deduplicate within one capture using the strongest available identity.
+
+    Name-only identity is deliberately not used here: two distinct products
+    can legitimately have the same display name.
+    """
+    gtin = str(
+        product.get("gtin")
+        or ""
+    ).strip()
+
+    if gtin:
+        return (
+            "gtin",
+            gtin,
+        )
+
+    sku = str(
+        product.get("sku")
+        or ""
+    ).strip()
+
+    if sku:
+        return (
+            "sku",
+            sku,
+        )
+
+    source_url = str(
+        product.get("source_url")
+        or ""
+    ).strip()
+
+    name = str(
+        product.get("product_name")
+        or ""
+    ).strip().lower()
+
+    return (
+        "url-name",
+        f"{source_url}|{name}",
+    )
+
+
 def extract_embedded_products(
     scripts: list[str],
     source_url: str,
@@ -293,14 +640,22 @@ def extract_embedded_products(
     """
     Extract product-like objects from embedded JSON.
 
-    Deduplicates records using the strongest available product identity.
+    The complete script list is processed as one unit so duplicates shared
+    between __NEXT_DATA__, Apollo state, etc. are removed.
     """
     records: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
 
-    for document in parse_json_scripts(scripts):
-        for value in walk_json(document):
-            if not isinstance(value, dict):
+    for document in parse_json_scripts(
+        scripts
+    ):
+        for value in walk_json(
+            document
+        ):
+            if not isinstance(
+                value,
+                dict,
+            ):
                 continue
 
             product = product_from_dict(
@@ -311,21 +666,16 @@ def extract_embedded_products(
             if product is None:
                 continue
 
-            gtin = str(product.get("gtin") or "").strip()
-            sku = str(product.get("sku") or "").strip()
-            name = str(product.get("product_name") or "").strip().lower()
-
-            if gtin:
-                identity = ("gtin", gtin)
-            elif sku:
-                identity = ("sku", sku)
-            else:
-                identity = ("name", name)
+            identity = _identity(
+                product
+            )
 
             if identity in seen:
                 continue
 
             seen.add(identity)
-            records.append(product)
+            records.append(
+                product
+            )
 
     return records
