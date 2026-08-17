@@ -1,5 +1,8 @@
 # open-grocery
 
+> [!IMPORTANT]
+> In active development, early alpha. Not ready for usage.
+
 An open grocery price and store data collection project. It discovers retailer
 data sources, captures raw HTML, parses product records out of embedded page
 data, and normalizes everything into a common schema for analysis.
