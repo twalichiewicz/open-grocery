@@ -6,6 +6,7 @@ import hashlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlparse
 
 import requests
 
@@ -24,6 +25,28 @@ HEADERS = {
 }
 
 SUCCESS_STATUS_CODES = set(range(200, 300))
+
+PRODUCT_SOURCE_TYPES = {
+    "product",
+    "product_search",
+    "product_catalog",
+}
+
+BLOCKING_PAGE_MARKERS = (
+    "captcha",
+    "verify you are human",
+    "access denied",
+    "unusual traffic",
+    "enable javascript",
+)
+
+STORE_LOCATOR_MARKERS = (
+    "find a location",
+    "find a store",
+    "store locator",
+    "search by zip code",
+    "city, state",
+)
 
 
 def load_sources(path: Path) -> list[dict[str, str]]:
@@ -108,11 +131,89 @@ def response_suffix(response: requests.Response) -> str:
     return ".bin"
 
 
+def _response_text(response: requests.Response) -> str:
+    content_type = response.headers.get(
+        "content-type",
+        "",
+    ).lower()
+
+    if "json" in content_type:
+        return response.text
+
+    return response.text
+
+
+def _looks_like_block_page(text: str) -> bool:
+    lowered = text.lower()
+
+    return any(
+        marker in lowered
+        for marker in BLOCKING_PAGE_MARKERS
+    )
+
+
+def _looks_like_store_locator(text: str) -> bool:
+    lowered = text.lower()
+
+    matches = sum(
+        marker in lowered
+        for marker in STORE_LOCATOR_MARKERS
+    )
+
+    return matches >= 2
+
+
+def classify_response(
+    row: dict[str, str],
+    response: requests.Response,
+) -> tuple[str, str | None]:
+    """
+    Classify a response without pretending that HTTP 200 means
+    successful product collection.
+
+    The classifier is intentionally conservative. It only rejects
+    obvious failures and obvious store-locator pages. Absence of
+    product data is ultimately determined by the parser.
+    """
+
+    if response.status_code not in SUCCESS_STATUS_CODES:
+        return (
+            "http_error",
+            f"HTTP {response.status_code}",
+        )
+
+    text = _response_text(response)
+
+    if _looks_like_block_page(text):
+        return (
+            "blocked",
+            "Response appears to be an access-control/block page",
+        )
+
+    source_type = (
+        row.get("source_type") or ""
+    ).strip().lower()
+
+    if (
+        source_type in PRODUCT_SOURCE_TYPES
+        and _looks_like_store_locator(text)
+    ):
+        return (
+            "wrong_source",
+            "Product source returned a store-locator page",
+        )
+
+    return "success", None
+
+
 def save_response(
     output_dir: Path,
     row: dict[str, str],
     response: requests.Response,
     elapsed: float,
+    *,
+    collection_status: str,
+    collection_error: str | None,
 ) -> Path:
     output_dir.mkdir(
         parents=True,
@@ -148,6 +249,8 @@ def save_response(
         ),
         "elapsed_seconds": elapsed,
         "collected_at": timestamp,
+        "collection_status": collection_status,
+        "collection_error": collection_error,
     }
 
     suffix = response_suffix(response)
@@ -192,6 +295,7 @@ def collect(
     print(f"Eligible sources: {len(eligible)}")
 
     successful = 0
+    failed = 0
 
     for index, row in enumerate(
         eligible,
@@ -222,11 +326,18 @@ def collect(
         try:
             response, elapsed = fetch_source(row)
 
+            status, error = classify_response(
+                row,
+                response,
+            )
+
             path = save_response(
                 output_dir,
                 row,
                 response,
                 elapsed,
+                collection_status=status,
+                collection_error=error,
             )
 
             print(
@@ -234,23 +345,25 @@ def collect(
                 f"({elapsed:.2f}s) -> {path}"
             )
 
-            if response.status_code in SUCCESS_STATUS_CODES:
+            if status == "success":
                 successful += 1
+            else:
+                failed += 1
+                print(
+                    f"  {status.upper()}: {error}"
+                )
 
         except requests.RequestException as exc:
+            failed += 1
             print(f"  ERROR: {exc}")
 
+    print()
     print(
-        f"Completed: "
-        f"{successful}/{len(eligible)} "
-        f"successful"
+        f"Completed: {successful}/{len(eligible)} "
+        f"successful, {failed} failed"
     )
 
-    return (
-        0
-        if successful == len(eligible)
-        else 1
-    )
+    return 0 if failed == 0 else 1
 
 
 def main() -> int:
