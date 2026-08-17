@@ -455,7 +455,7 @@ def normalize_product(
         "sku": normalize_text(
             product.get("sku")
         ),
-        "price": price,
+        "price": float(price) if price is not None else None,
         "currency": currency,
         "availability": normalize_availability(
             product.get("availability")
