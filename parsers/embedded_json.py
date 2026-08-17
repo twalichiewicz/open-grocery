@@ -20,8 +20,12 @@ PRODUCT_TYPENAME_PREFIXES = (
 PRODUCT_NAME_KEYS = (
     "productName",
     "product_name",
+    "itemName",
+    "item_name",
     "name",
     "title",
+    "productTitle",
+    "product_title",
     "displayName",
     "display_name",
 )
@@ -30,7 +34,9 @@ PRODUCT_NAME_KEYS = (
 BRAND_KEYS = (
     "brand",
     "brandName",
+    "brand_name",
     "manufacturer",
+    "manufacturerName",
 )
 
 
@@ -54,14 +60,23 @@ SKU_KEYS = (
     "item_id",
     "productId",
     "product_id",
+    "retailerItemId",
+    "retailer_item_id",
 )
 
 
 PRICE_KEYS = (
     "price",
+    "priceString",
+    "price_string",
+    "priceValue",
+    "price_value",
     "currentPrice",
+    "current_price",
     "salePrice",
+    "sale_price",
     "regularPrice",
+    "regular_price",
 )
 
 
@@ -69,13 +84,16 @@ CURRENCY_KEYS = (
     "currency",
     "priceCurrency",
     "currencyCode",
+    "currency_code",
 )
 
 
 AVAILABILITY_KEYS = (
     "availability",
     "stockStatus",
+    "stock_status",
     "inventoryStatus",
+    "inventory_status",
 )
 
 
@@ -87,6 +105,8 @@ PRODUCT_SIGNAL_KEYS = (
     "item_id",
     "productId",
     "product_id",
+    "retailerItemId",
+    "retailer_item_id",
     "gtin",
     "gtin12",
     "gtin13",
@@ -96,9 +116,45 @@ PRODUCT_SIGNAL_KEYS = (
     "upcCode",
     "upc_code",
     "price",
+    "priceString",
+    "price_string",
+    "priceValue",
+    "price_value",
     "currentPrice",
+    "current_price",
     "salePrice",
+    "sale_price",
     "regularPrice",
+    "regular_price",
+)
+
+
+STRUCTURAL_PRODUCT_KEYS = (
+    "brand",
+    "brandName",
+    "brand_name",
+    "manufacturer",
+    "manufacturerName",
+    "description",
+    "productDescription",
+    "product_description",
+    "image",
+    "imageUrl",
+    "image_url",
+    "productUrl",
+    "product_url",
+    "url",
+    "offers",
+    "offer",
+    "pricing",
+    "priceInfo",
+    "price_info",
+    "inventory",
+    "inventoryStatus",
+    "inventory_status",
+    "stockStatus",
+    "stock_status",
+    "availability",
 )
 
 
@@ -156,6 +212,17 @@ def _scalar(
     )
 
 
+def _nonempty(
+    value: Any,
+) -> bool:
+    return value not in (
+        None,
+        "",
+        [],
+        {},
+    )
+
+
 def _extract_brand(
     value: Any,
 ) -> Any:
@@ -165,6 +232,7 @@ def _extract_brand(
             (
                 "name",
                 "brandName",
+                "brand_name",
             ),
         )
 
@@ -328,18 +396,23 @@ def _has_product_signal(
     for key in PRODUCT_SIGNAL_KEYS:
         candidate = value.get(key)
 
-        if candidate not in (
-            None,
-            "",
-            [],
-            {},
-        ):
+        if _nonempty(candidate):
             return True
 
     if _has_nested_price_signal(value):
         return True
 
     return False
+
+
+def _structural_product_signal_count(
+    value: dict[str, Any],
+) -> int:
+    return sum(
+        1
+        for key in STRUCTURAL_PRODUCT_KEYS
+        if _nonempty(value.get(key))
+    )
 
 
 def _has_allowed_typename(
@@ -440,10 +513,10 @@ def _is_product_candidate(
     if _has_allowed_typename(value):
         return True
 
-    if sku not in (None, ""):
+    if gtin not in (None, ""):
         return True
 
-    if gtin not in (None, ""):
+    if sku not in (None, ""):
         return True
 
     if _has_product_signal(value):
@@ -500,6 +573,7 @@ def product_from_dict(
                 "offer",
                 "pricing",
                 "priceInfo",
+                "price_info",
             ),
         )
     )

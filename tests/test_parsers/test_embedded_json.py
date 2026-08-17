@@ -120,6 +120,7 @@ def test_cross_script_dedupe():
 
     assert len(result) == 1
 
+
 def test_product_with_item_id_is_accepted():
     result = product_from_dict(
         {
@@ -152,6 +153,101 @@ def test_navigation_with_item_id_is_rejected():
             "__typename": "NavigationV2ResponseBackedDefaultItemSection",
             "name": "Products & Services",
             "itemId": "navigation-123",
+        },
+        "https://example.com",
+    )
+
+    assert result is None
+
+
+def test_product_with_item_name_is_accepted():
+    result = product_from_dict(
+        {
+            "itemName": "Organic Milk",
+            "itemId": "ITEM-123",
+        },
+        "https://example.com",
+    )
+
+    assert result is not None
+    assert result["product_name"] == "Organic Milk"
+    assert result["sku"] == "ITEM-123"
+
+
+def test_product_with_snake_case_item_name_is_accepted():
+    result = product_from_dict(
+        {
+            "item_name": "Organic Milk",
+            "item_number": "ITEM-123",
+        },
+        "https://example.com",
+    )
+
+    assert result is not None
+    assert result["product_name"] == "Organic Milk"
+    assert result["sku"] == "ITEM-123"
+
+
+def test_product_with_price_string_is_accepted():
+    result = product_from_dict(
+        {
+            "itemName": "Organic Milk",
+            "priceString": "$4.05",
+        },
+        "https://example.com",
+    )
+
+    assert result is not None
+    assert result["product_name"] == "Organic Milk"
+    assert result["price"] == "$4.05"
+
+
+def test_product_with_price_value_is_accepted():
+    result = product_from_dict(
+        {
+            "itemName": "Organic Milk",
+            "priceValue": 4.05,
+        },
+        "https://example.com",
+    )
+
+    assert result is not None
+    assert result["product_name"] == "Organic Milk"
+    assert result["price"] == 4.05
+
+
+def test_product_title_variant_is_accepted():
+    result = product_from_dict(
+        {
+            "productTitle": "Organic Milk",
+            "productId": "PRODUCT-123",
+        },
+        "https://example.com",
+    )
+
+    assert result is not None
+    assert result["product_name"] == "Organic Milk"
+    assert result["sku"] == "PRODUCT-123"
+
+
+def test_navigation_with_item_name_is_rejected():
+    result = product_from_dict(
+        {
+            "__typename": "NavigationV2ResponseBackedDefaultItemSection",
+            "itemName": "Products & Services",
+            "itemId": "navigation-123",
+        },
+        "https://example.com",
+    )
+
+    assert result is None
+
+
+def test_navigation_with_product_title_is_rejected():
+    result = product_from_dict(
+        {
+            "productTitle": "Store Locator",
+            "productId": "navigation-123",
         },
         "https://example.com",
     )
