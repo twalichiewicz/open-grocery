@@ -8,7 +8,13 @@ JSON_SCRIPT_IDS = {
     "__NEXT_DATA__",
     "__NUXT_DATA__",
     "__APOLLO_STATE__",
+    "node-apollo-state",
 }
+
+
+PRODUCT_TYPENAME_PREFIXES = (
+    "ItemsResponseBackedItem",
+)
 
 
 def parse_json_scripts(
@@ -64,12 +70,83 @@ def _extract_offer(value: Any) -> dict[str, Any]:
     return {}
 
 
+def _has_price_signal(value: dict[str, Any]) -> bool:
+    """
+    Return whether the object contains a scalar price-like field.
+
+    Nested Instacart price objects are intentionally not handled here;
+    that is the extraction-quality pass that follows this safety/precision
+    pass. The important distinction here is that a generic object named
+    "title" is not sufficient evidence of being a product.
+    """
+    for key in (
+        "price",
+        "currentPrice",
+        "salePrice",
+        "regularPrice",
+    ):
+        candidate = value.get(key)
+
+        if candidate in (None, ""):
+            continue
+
+        if isinstance(candidate, (str, int, float)):
+            return True
+
+    return False
+
+
+def _has_allowed_typename(value: dict[str, Any]) -> bool:
+    typename = value.get("__typename")
+
+    if not isinstance(typename, str):
+        return False
+
+    return any(
+        typename.startswith(prefix)
+        for prefix in PRODUCT_TYPENAME_PREFIXES
+    )
+
+
+def _is_product_candidate(
+    value: dict[str, Any],
+    *,
+    gtin: Any,
+    sku: Any,
+) -> bool:
+    """
+    Require evidence beyond a generic name/title field.
+
+    A product candidate must have:
+      - a SKU or GTIN, or
+      - a price-like field, or
+      - a known product-bearing __typename.
+    """
+    if gtin not in (None, ""):
+        return True
+
+    if sku not in (None, ""):
+        return True
+
+    if _has_price_signal(value):
+        return True
+
+    if _has_allowed_typename(value):
+        return True
+
+    return False
+
+
 def product_from_dict(
     value: dict[str, Any],
     source_url: str,
 ) -> dict[str, Any] | None:
     """
     Convert a JSON object that looks like a product into our common record.
+
+    A name/title alone is not sufficient evidence. Embedded application
+    JSON contains navigation labels, analytics events, localization data,
+    and other objects that happen to contain those fields.
     """
     product_name = _first(
         value,
@@ -118,6 +195,13 @@ def product_from_dict(
             "productId",
         ),
     )
+
+    if not _is_product_candidate(
+        value,
+        gtin=gtin,
+        sku=sku,
+    ):
+        return None
 
     offer = _extract_offer(
         _first(
@@ -219,7 +303,10 @@ def extract_embedded_products(
             if not isinstance(value, dict):
                 continue
 
-            product = product_from_dict(value, source_url)
+            product = product_from_dict(
+                value,
+                source_url,
+            )
 
             if product is None:
                 continue
