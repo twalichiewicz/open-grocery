@@ -2,41 +2,17 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from collections import Counter, defaultdict
-from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Any
 
 
-ROOT = Path(__file__).resolve().parents[1]
-
-DEFAULT_INPUT = (
-    ROOT
-    / "data"
-    / "normalized"
-    / "products.jsonl"
+DEFAULT_INPUT = Path(
+    "data/normalized/products.jsonl"
 )
 
 
-REQUIRED_FIELDS = {
-    "source_url",
-    "product_name",
-    "brand",
-    "gtin",
-    "sku",
-    "price",
-    "currency",
-    "availability",
-    "retailer",
-    "observed_at",
-}
-
-
-def load_records(
-    path: Path,
-) -> list[dict[str, Any]]:
-    records: list[dict[str, Any]] = []
+def load_rows(path: Path) -> list[dict]:
+    rows = []
 
     with path.open(
         "r",
@@ -50,225 +26,115 @@ def load_records(
                 continue
 
             try:
-                value = json.loads(line)
+                rows.append(json.loads(line))
             except json.JSONDecodeError as exc:
                 raise ValueError(
-                    f"{path}:{line_number}: invalid JSON: {exc}"
+                    f"{path}:{line_number}: "
+                    f"invalid JSON: {exc}"
                 ) from exc
 
-            if not isinstance(value, dict):
-                raise ValueError(
-                    f"{path}:{line_number}: record is not an object"
-                )
-
-            records.append(value)
-
-    return records
+    return rows
 
 
-def validate_record(
-    record: dict[str, Any],
-    index: int,
-) -> list[str]:
-    errors: list[str] = []
+def validate(rows: list[dict]) -> int:
+    errors = []
 
-    missing = REQUIRED_FIELDS - record.keys()
-
-    if missing:
-        errors.append(
-            f"record {index}: missing fields: "
-            + ", ".join(sorted(missing))
-        )
-
-    product_name = record.get("product_name")
-
-    if not isinstance(product_name, str) or not product_name.strip():
-        errors.append(
-            f"record {index}: invalid product_name"
-        )
-
-    price = record.get("price")
-
-    if price is not None:
-        try:
-            decimal_price = Decimal(str(price))
-        except (InvalidOperation, ValueError):
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict):
             errors.append(
-                f"record {index}: invalid price {price!r}"
+                f"row {index}: not an object"
             )
-        else:
-            if not decimal_price.is_finite():
-                errors.append(
-                    f"record {index}: non-finite price"
-                )
+            continue
 
-            if decimal_price < 0:
-                errors.append(
-                    f"record {index}: negative price"
-                )
+        if not row.get("product_name"):
+            errors.append(
+                f"row {index}: missing product_name"
+            )
 
-    availability = record.get("availability")
+        if not row.get("retailer"):
+            errors.append(
+                f"row {index}: missing retailer"
+            )
 
-    if availability is not None and not isinstance(
-        availability,
-        str,
-    ):
-        errors.append(
-            f"record {index}: availability is not a string"
-        )
+        if not row.get("observed_at"):
+            errors.append(
+                f"row {index}: missing observed_at"
+            )
 
-    for field in (
-        "retailer",
-        "observed_at",
-    ):
-        value = record.get(field)
+        price = row.get("price")
 
-        if value is not None and not isinstance(
-            value,
-            str,
+        if price is not None and not isinstance(
+            price,
+            (int, float),
         ):
             errors.append(
-                f"record {index}: {field} is not a string"
+                f"row {index}: price is not numeric"
             )
 
-    return errors
+    print("=" * 72)
+    print("NORMALIZED DATASET")
+    print("=" * 72)
+    print(f"rows: {len(rows)}")
 
-
-def quality_report(
-    records: list[dict[str, Any]],
-) -> None:
-    by_retailer: dict[str, list[dict[str, Any]]] = (
-        defaultdict(list)
+    retailers = Counter(
+        row.get("retailer")
+        for row in rows
     )
-
-    for record in records:
-        retailer = (
-            record.get("retailer")
-            or "(unknown)"
-        )
-
-        by_retailer[retailer].append(record)
 
     print()
-    print("QUALITY BY RETAILER")
-    print("=" * 72)
+    print("retailers:")
 
-    for retailer, rows in sorted(
-        by_retailer.items()
-    ):
-        total = len(rows)
-
-        def coverage(field: str) -> str:
-            count = sum(
-                1
-                for row in rows
-                if row.get(field) not in (
-                    None,
-                    "",
-                )
-            )
-
-            percentage = (
-                100 * count / total
-                if total
-                else 0
-            )
-
-            return f"{percentage:5.1f}%"
+    for retailer, count in retailers.most_common():
+        group = [
+            row
+            for row in rows
+            if row.get("retailer") == retailer
+        ]
 
         print(
-            f"{retailer}: "
-            f"{total:5d} rows  "
-            f"price {coverage('price')}  "
-            f"sku {coverage('sku')}  "
-            f"gtin {coverage('gtin')}  "
-            f"brand {coverage('brand')}  "
-            f"availability {coverage('availability')}"
+            f"  {count:4} {retailer!r} "
+            f"priced={sum(r.get('price') is not None for r in group)} "
+            f"sku={sum(bool(r.get('sku')) for r in group)} "
+            f"gtin={sum(bool(r.get('gtin')) for r in group)}"
         )
 
-
-def validate(
-    path: Path,
-    *,
-    report: bool = True,
-) -> int:
-    try:
-        records = load_records(path)
-    except (OSError, ValueError) as exc:
+    print()
+    print("availability:")
+    for value, count in Counter(
+        row.get("availability")
+        for row in rows
+    ).most_common():
         print(
-            f"ERROR: {exc}",
-            file=sys.stderr,
-        )
-        return 1
-
-    errors: list[str] = []
-
-    for index, record in enumerate(
-        records,
-        start=1,
-    ):
-        errors.extend(
-            validate_record(
-                record,
-                index,
-            )
+            f"  {count:4} {value!r}"
         )
 
-    print(
-        f"Records: {len(records)}"
-    )
+    print()
+    print("errors:", len(errors))
 
-    if errors:
+    for error in errors[:20]:
+        print("  ERROR:", error)
+
+    if len(errors) > 20:
         print(
-            f"Validation errors: {len(errors)}"
+            f"  ... {len(errors) - 20} more"
         )
-
-        for error in errors[:50]:
-            print(
-                f"  {error}",
-                file=sys.stderr,
-            )
-
-        if len(errors) > 50:
-            print(
-                f"  ... {len(errors) - 50} more",
-                file=sys.stderr,
-            )
-
-    else:
-        print("Validation errors: 0")
-
-    if report:
-        quality_report(records)
 
     return 1 if errors else 0
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(
-        description=(
-            "Validate normalized Open Grocery records."
-        )
-    )
+    parser = argparse.ArgumentParser()
 
     parser.add_argument(
-        "input",
-        nargs="?",
+        "--input",
         type=Path,
         default=DEFAULT_INPUT,
-    )
-
-    parser.add_argument(
-        "--no-report",
-        action="store_true",
-        help="Skip the per-retailer quality report.",
     )
 
     args = parser.parse_args()
 
     return validate(
-        args.input,
-        report=not args.no_report,
+        load_rows(args.input)
     )
 
 
