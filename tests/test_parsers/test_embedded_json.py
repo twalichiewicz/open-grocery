@@ -1,4 +1,5 @@
 from parsers.embedded_json import product_from_dict
+from parsers.embedded_json import extract_embedded_products
 
 
 def test_name_alone_is_not_a_product():
@@ -88,3 +89,33 @@ def test_analytics_typename_is_not_accepted():
     )
 
     assert result is None
+
+
+def test_cross_script_dedupe():
+    scripts = [
+        """
+        {
+          "product": {
+            "name": "Organic Milk",
+            "sku": "MILK-1",
+            "price": "$4.05"
+          }
+        }
+        """,
+        """
+        {
+          "anotherProduct": {
+            "name": "Organic Milk",
+            "sku": "MILK-1",
+            "price": "$4.05"
+          }
+        }
+        """,
+    ]
+
+    result = extract_embedded_products(
+        scripts,
+        "https://example.com",
+    )
+
+    assert len(result) == 1

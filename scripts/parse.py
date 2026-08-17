@@ -15,12 +15,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 sys.path.insert(0, str(ROOT))
 
+from parsers.common import extract_products as extract_jsonld_products
 from parsers.embedded_json import extract_embedded_products
 from parsers.html import (
     extract_html_products,
     extract_json_scripts_with_ids,
 )
-from parsers.jsonld import extract_jsonld
 from normalize.products import normalize_products
 
 
@@ -30,23 +30,20 @@ DEFAULT_OUTPUT = ROOT / "data" / "normalized" / "products.jsonl"
 
 def decode_json_script(
     content: str,
-    *,
-    url_decode: bool = False,
 ) -> str | None:
     """
-    Return the JSON text of an embedded script, or None if unparseable.
+    Return valid JSON text from an embedded script.
 
-    Some retailers embed URL-encoded JSON, so an optional second attempt
-    is made after urllib.parse.unquote(). The decoded text (not the
-    parsed object) is returned because downstream parsers own parsing.
+    Raw text is always attempted first. If that fails, a URL-decoded
+    candidate is attempted. This is safe for ordinary JSON because
+    decoding is only accepted when the resulting text parses.
     """
     candidates = [content]
 
-    if url_decode:
-        decoded = unquote(content)
+    decoded = unquote(content)
 
-        if decoded != content:
-            candidates.append(decoded)
+    if decoded != content:
+        candidates.append(decoded)
 
     for candidate in candidates:
         try:
@@ -81,7 +78,7 @@ def parse_html_file(
     path: Path,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """
-    Parse one raw HTML file using all currently supported strategies.
+    Parse one raw HTML file using all supported extraction strategies.
     """
     html = path.read_bytes()
     source_url = load_source_url(path)
@@ -103,7 +100,10 @@ def parse_html_file(
     # JSON-LD
     # ---------------------------------------------------------------
 
-    jsonld_products = extract_jsonld(html)
+    jsonld_products = extract_jsonld_products(
+        html,
+        source_url,
+    )
 
     if jsonld_products:
         products.extend(jsonld_products)
@@ -124,11 +124,16 @@ def parse_html_file(
 
     # ---------------------------------------------------------------
     # Embedded application JSON
+    #
+    # Parse all scripts together so extract_embedded_products() can
+    # actually deduplicate across scripts.
     # ---------------------------------------------------------------
 
     scripts = extract_json_scripts_with_ids(html)
 
     stats["json_scripts"] = len(scripts)
+
+    json_texts: list[str] = []
 
     for script in scripts:
         script_id = script["id"]
@@ -136,9 +141,12 @@ def parse_html_file(
         if script_id:
             stats["script_ids"].append(script_id)
 
+        # JSON-LD is handled exclusively by the JSON-LD path above.
+        if script["type"] == "application/ld+json":
+            continue
+
         json_text = decode_json_script(
             script["content"],
-            url_decode=(script_id == "node-apollo-state"),
         )
 
         if json_text is None:
@@ -146,15 +154,17 @@ def parse_html_file(
 
         stats["json_scripts_parsed"] += 1
         stats["json_objects"] += 1
+        json_texts.append(json_text)
 
+    if json_texts:
         embedded_products = extract_embedded_products(
-            [json_text],
+            json_texts,
             source_url,
         )
 
         if embedded_products:
             products.extend(embedded_products)
-            stats["product_like_objects"] += len(embedded_products)
+            stats["product_like_objects"] = len(embedded_products)
 
     return products, stats
 
@@ -274,7 +284,10 @@ def write_jsonl(
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Parse raw grocery retailer HTML into normalized product records."
+        description=(
+            "Parse raw grocery retailer HTML into "
+            "normalized product records."
+        )
     )
 
     parser.add_argument(
@@ -380,10 +393,6 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
-
-    # ---------------------------------------------------------------
-    # Normalize
-    # ---------------------------------------------------------------
 
     normalized = normalize_products(all_products)
     normalized = dedupe_products(normalized)

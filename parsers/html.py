@@ -87,56 +87,45 @@ def extract_meta(
     return metadata
 
 
+def _is_embedded_json_script(
+    script_id: str | None,
+    script_type: str,
+) -> bool:
+    """
+    Return whether a script belongs to the embedded application-state path.
+
+    JSON-LD is deliberately excluded because it has its own parser.
+    """
+    if script_type == "application/ld+json":
+        return False
+
+    if script_id in KNOWN_JSON_SCRIPT_IDS:
+        return True
+
+    return script_type == "application/json" or (
+        script_type.endswith("+json")
+        and script_type != "application/ld+json"
+    )
+
+
 def extract_json_scripts(
     html: bytes | str,
 ) -> list[str]:
     """
-    Extract raw contents of scripts that may contain JSON.
+    Extract raw contents of embedded application JSON scripts.
 
-    We deliberately do not require one specific retailer/framework
-    script ID. Retailers frequently change their embedded-state names.
-
-    Recognized sources include:
-      - application/json scripts
-      - __NEXT_DATA__
-      - __NUXT_DATA__
-      - __APOLLO_STATE__
-      - node-apollo-state
+    JSON-LD is excluded and handled by parsers.jsonld.
     """
-    soup = soup_from_html(html)
-
-    results: list[str] = []
-
-    for script in soup.find_all("script"):
-        script_id = script.get("id")
-        script_type = (script.get("type") or "").lower()
-
-        is_json_type = (
-            script_type == "application/json"
-            or script_type.endswith("+json")
-            or "json" in script_type
-        )
-
-        is_known_id = script_id in KNOWN_JSON_SCRIPT_IDS
-
-        if not (is_json_type or is_known_id):
-            continue
-
-        content = script.string or script.get_text()
-
-        if content and content.strip():
-            results.append(content.strip())
-
-    return results
-
+    return [
+        script["content"]
+        for script in extract_json_scripts_with_ids(html)
+    ]
 
 def extract_json_scripts_with_ids(
     html: bytes | str,
 ) -> list[dict[str, str]]:
     """
-    Extract JSON-bearing scripts while retaining their script IDs.
-
-    This is useful for debugging retailer-specific embedded state.
+    Extract embedded application JSON while retaining script IDs.
     """
     soup = soup_from_html(html)
 
@@ -146,15 +135,10 @@ def extract_json_scripts_with_ids(
         script_id = script.get("id")
         script_type = (script.get("type") or "").lower()
 
-        is_json_type = (
-            script_type == "application/json"
-            or script_type.endswith("+json")
-            or "json" in script_type
-        )
-
-        is_known_id = script_id in KNOWN_JSON_SCRIPT_IDS
-
-        if not (is_json_type or is_known_id):
+        if not _is_embedded_json_script(
+            script_id,
+            script_type,
+        ):
             continue
 
         content = script.string or script.get_text()
@@ -171,7 +155,6 @@ def extract_json_scripts_with_ids(
         )
 
     return results
-
 
 def _first_value(
     data: dict[str, Any],
