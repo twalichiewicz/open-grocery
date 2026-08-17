@@ -50,8 +50,8 @@ def normalize_text(
     """
     Normalize scalar text values.
 
-    Structured values such as dictionaries and lists are rejected rather
-    than coerced into Python repr() strings.
+    Structured values are rejected rather than coerced into Python repr()
+    strings.
     """
     if value is None:
         return None
@@ -82,10 +82,12 @@ def normalize_gtin(
     """
     Normalize and validate GTIN values.
 
-    Supported GTIN lengths are 8, 12, 13, and 14 digits. The check digit
-    is validated using the GS1 modulo-10 algorithm.
+    Supported lengths are 8, 12, 13, and 14 digits. The GS1 modulo-10
+    check digit must also validate.
     """
-    value = normalize_text(value)
+    value = normalize_text(
+        value
+    )
 
     if value is None:
         return None
@@ -132,134 +134,19 @@ def normalize_gtin(
     return digits
 
 
-def _extract_nested_price(
-    value: Any,
-) -> Any:
-    """
-    Extract the scalar price from common nested retailer structures.
-
-    Instacart/Aldi/Sprouts captures commonly contain:
-
-        price.viewSection.itemCard.priceString
-
-    with additional fallbacks in:
-
-        price.viewSection.itemCard.fullPriceString
-        price.viewSection.badge.trackingProperties.price
-
-    This function only extracts a candidate. Actual numeric validation
-    remains the responsibility of normalize_price().
-    """
-    if not isinstance(value, dict):
-        return value
-
-    # Already scalar-looking.
-    for key in (
-        "priceString",
-        "price",
-        "currentPrice",
-        "salePrice",
-        "regularPrice",
-        "amount",
-        "value",
-    ):
-        candidate = value.get(key)
-
-        if isinstance(
-            candidate,
-            (str, int, float, Decimal),
-        ):
-            return candidate
-
-    view_section = value.get(
-        "viewSection"
-    )
-
-    if isinstance(
-        view_section,
-        dict,
-    ):
-        item_card = view_section.get(
-            "itemCard"
-        )
-
-        if isinstance(
-            item_card,
-            dict,
-        ):
-            candidate = (
-                item_card.get(
-                    "priceString"
-                )
-            )
-
-            if candidate not in (
-                None,
-                "",
-            ):
-                return candidate
-
-            candidate = (
-                item_card.get(
-                    "fullPriceString"
-                )
-            )
-
-            if candidate not in (
-                None,
-                "",
-            ):
-                return candidate
-
-        badge = view_section.get(
-            "badge"
-        )
-
-        if isinstance(
-            badge,
-            dict,
-        ):
-            tracking_properties = (
-                badge.get(
-                    "trackingProperties"
-                )
-            )
-
-            if isinstance(
-                tracking_properties,
-                dict,
-            ):
-                candidate = (
-                    tracking_properties.get(
-                        "price"
-                    )
-                )
-
-                if candidate not in (
-                    None,
-                    "",
-                ):
-                    return candidate
-
-    return None
-
-
 def _normalize_decimal_text(
     text: str,
 ) -> tuple[str, str | None]:
     """
     Normalize human-formatted price text.
 
-    Returns:
-        (numeric_text, inferred_currency)
-
     Examples:
 
-        "$4.05"       -> ("4.05", "USD")
-        "€4,39"       -> ("4.39", "EUR")
-        "1.234,56"    -> ("1234.56", None)
-        "1,234.56"    -> ("1234.56", None)
-        "4.39 USD"    -> ("4.39", "USD")
+        "$4.05"      -> ("4.05", "USD")
+        "€4,39"      -> ("4.39", "EUR")
+        "1.234,56"   -> ("1234.56", None)
+        "1,234.56"   -> ("1234.56", None)
+        "4.39 USD"   -> ("4.39", "USD")
     """
     currency: str | None = None
 
@@ -291,7 +178,6 @@ def _normalize_decimal_text(
             .strip()
         )
 
-    # Remove ordinary grouping spaces.
     text = text.replace(
         " ",
         "",
@@ -301,12 +187,6 @@ def _normalize_decimal_text(
     has_dot = "." in text
 
     if has_comma and has_dot:
-        # Whichever separator occurs last is treated as the decimal
-        # separator:
-        #
-        # 1,234.56 -> 1234.56
-        # 1.234,56 -> 1234.56
-        #
         if text.rfind(",") > text.rfind("."):
             text = text.replace(
                 ".",
@@ -325,8 +205,6 @@ def _normalize_decimal_text(
     elif has_comma:
         parts = text.split(",")
 
-        # A final 1- or 2-digit group is overwhelmingly likely to be
-        # a decimal fraction in grocery prices.
         if len(parts[-1]) in {
             1,
             2,
@@ -342,14 +220,6 @@ def _normalize_decimal_text(
     elif has_dot:
         parts = text.split(".")
 
-        # More than one dot is grouping, as is a single dot followed by
-        # exactly three digits:
-        #
-        # 1.234      -> 1234
-        # 1.234.567  -> 1234567
-        #
-        # A two-digit final group remains decimal:
-        # 4.05 -> 4.05
         if (
             len(parts) > 2
             or len(parts[-1]) == 3
@@ -366,18 +236,11 @@ def normalize_price(
     value: Any,
 ) -> Decimal | None:
     """
-    Normalize a price to a finite non-negative Decimal with two decimals.
+    Normalize a scalar price to a finite, non-negative Decimal.
 
-    Structured price objects are searched for a known nested scalar before
-    numeric normalization.
+    Parser-specific structured prices should already have been extracted
+    before this function is called.
     """
-    if value is None:
-        return None
-
-    value = _extract_nested_price(
-        value
-    )
-
     if value is None:
         return None
 
@@ -442,9 +305,6 @@ def normalize_price(
 def infer_currency(
     value: Any,
 ) -> str | None:
-    """
-    Infer a currency code from a scalar price value.
-    """
     if not isinstance(
         value,
         (
@@ -456,11 +316,9 @@ def infer_currency(
     ):
         return None
 
-    text = str(value).strip()
-
     _, currency = (
         _normalize_decimal_text(
-            text
+            str(value).strip()
         )
     )
 
@@ -470,9 +328,6 @@ def infer_currency(
 def normalize_currency(
     value: Any,
 ) -> str | None:
-    """
-    Normalize an explicitly supplied currency code.
-    """
     value = normalize_text(
         value
     )
@@ -492,16 +347,15 @@ def normalize_availability(
     value: Any,
 ) -> str | None:
     """
-    Normalize availability to a small stable enum.
+    Normalize availability to a stable enum.
 
-    JSON-LD commonly supplies schema.org URLs. Embedded retailer data may
-    supply equivalent textual values.
+    Structured values are inspected for known fields; otherwise they are
+    rejected rather than stringified.
     """
     if isinstance(
         value,
         dict,
     ):
-        # Common structured availability shapes.
         for key in (
             "availability",
             "status",
@@ -520,9 +374,6 @@ def normalize_availability(
                     candidate
                 )
 
-        # Instacart sometimes nests availability-like information under
-        # item metadata. Don't stringify the object if it cannot be
-        # interpreted.
         return None
 
     value = normalize_text(
@@ -532,7 +383,7 @@ def normalize_availability(
     if value is None:
         return None
 
-    normalized = value.strip().lower()
+    normalized = value.lower()
 
     return AVAILABILITY_MAP.get(
         normalized,
@@ -558,9 +409,6 @@ def _extract_brand(
 def normalize_product(
     product: dict[str, Any],
 ) -> dict[str, Any]:
-    """
-    Normalize a parsed product into a stable JSON-serializable record.
-    """
     brand = _extract_brand(
         product.get("brand")
     )
@@ -577,12 +425,9 @@ def normalize_product(
         product.get("currency")
     )
 
-    # If the parser did not supply a currency, infer it from the price.
     if currency is None:
         currency = infer_currency(
-            _extract_nested_price(
-                raw_price
-            )
+            raw_price
         )
 
     return {
@@ -621,9 +466,6 @@ def normalize_product(
 def normalize_products(
     products: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """
-    Normalize products and discard records without a product name.
-    """
     results: list[dict[str, Any]] = []
 
     for product in products:
