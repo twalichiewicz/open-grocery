@@ -132,14 +132,17 @@ def _extract_brand(
     if isinstance(value, dict):
         return _first(
             value,
-            ("name", "brandName"),
+            (
+                "name",
+                "brandName",
+            ),
         )
 
     return value
 
 
 def _extract_nested_instacart_price(
-    value: Any,
+    value: dict[str, Any],
 ) -> tuple[Any, Any]:
     """
     Extract the scalar price/currency from an Instacart item object.
@@ -194,10 +197,8 @@ def _extract_nested_instacart_price(
                 ),
             )
 
-        full_price_string = (
-            item_card.get(
-                "fullPriceString"
-            )
+        full_price_string = item_card.get(
+            "fullPriceString"
         )
 
         if _scalar(full_price_string):
@@ -216,10 +217,8 @@ def _extract_nested_instacart_price(
         badge,
         dict,
     ):
-        tracking_properties = (
-            badge.get(
-                "trackingProperties"
-            )
+        tracking_properties = badge.get(
+            "trackingProperties"
         )
 
         if isinstance(
@@ -282,12 +281,8 @@ def _has_scalar_price_signal(
 def _has_nested_price_signal(
     value: dict[str, Any],
 ) -> bool:
-    price = value.get(
-        "price"
-    )
-
     if not isinstance(
-        price,
+        value.get("price"),
         dict,
     ):
         return False
@@ -298,9 +293,7 @@ def _has_nested_price_signal(
         )
     )
 
-    return _scalar(
-        nested_price
-    )
+    return _scalar(nested_price)
 
 
 def _has_allowed_typename(
@@ -328,10 +321,7 @@ def _looks_like_navigation(
 ) -> bool:
     """
     Reject common navigation/content objects that happen to contain
-    product-ish identifiers.
-
-    This is deliberately conservative: these strings are strong signals
-    that an object is site chrome rather than a sellable item.
+    product-ish fields.
     """
     normalized = product_name.strip().lower()
 
@@ -345,9 +335,6 @@ def _looks_like_navigation(
         "order deli",
         "find an ",
         "find a ",
-        "menu",
-        "category",
-        "department",
         "service type",
         "live_link",
     )
@@ -373,7 +360,6 @@ def _looks_like_navigation(
             for term in (
                 "navigation",
                 "menu",
-                "category",
                 "location",
                 "service",
             )
@@ -390,7 +376,10 @@ def _is_product_candidate(
     gtin: Any,
     sku: Any,
 ) -> bool:
-    if not isinstance(product_name, str):
+    if not isinstance(
+        product_name,
+        str,
+    ):
         return False
 
     if not product_name.strip():
@@ -402,65 +391,22 @@ def _is_product_candidate(
     ):
         return False
 
-    # Explicit retailer/product model types are the strongest signal.
+    # Explicit retailer/product model types are a strong signal.
     if _has_allowed_typename(value):
         return True
 
-    # A real GTIN is strong identity evidence. normalize_gtin() will
-    # perform the actual validation later.
+    # The product predicate deliberately requires a second signal
+    # beyond name/title. SKU and price are independently sufficient.
+    if sku not in (None, ""):
+        return True
+
     if gtin not in (None, ""):
         return True
 
-    # Product-specific structural signals.
-    structural_signals = (
-        "brand",
-        "brandName",
-        "manufacturer",
-        "description",
-        "productDescription",
-        "image",
-        "imageUrl",
-        "productUrl",
-        "url",
-        "offers",
-        "offer",
-        "pricing",
-        "priceInfo",
-        "inventory",
-        "inventoryStatus",
-        "stockStatus",
-        "availability",
-    )
-
-    structural_count = sum(
-        1
-        for key in structural_signals
-        if value.get(key) not in (
-            None,
-            "",
-            [],
-            {},
-        )
-    )
-
-    # A SKU plus one independent product characteristic is enough.
-    #
-    # Importantly, productId/itemId alone is NOT enough.
-    if sku not in (None, "") and structural_count >= 1:
+    if _has_scalar_price_signal(value):
         return True
 
-    # Nested Instacart price + another product characteristic.
-    if (
-        _has_nested_price_signal(value)
-        and structural_count >= 1
-    ):
-        return True
-
-    # Scalar price + another product characteristic.
-    if (
-        _has_scalar_price_signal(value)
-        and structural_count >= 1
-    ):
+    if _has_nested_price_signal(value):
         return True
 
     return False
@@ -587,10 +533,8 @@ def _identity(
     product: dict[str, Any],
 ) -> tuple[str, str]:
     """
-    Deduplicate within one capture using the strongest available identity.
-
-    Name-only identity is deliberately not used here: two distinct products
-    can legitimately have the same display name.
+    Deduplicate within one extraction pass using the strongest available
+    identity.
     """
     gtin = str(
         product.get("gtin")
