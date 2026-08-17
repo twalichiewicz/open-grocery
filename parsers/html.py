@@ -121,6 +121,7 @@ def extract_json_scripts(
         for script in extract_json_scripts_with_ids(html)
     ]
 
+
 def extract_json_scripts_with_ids(
     html: bytes | str,
 ) -> list[dict[str, str]]:
@@ -156,6 +157,7 @@ def extract_json_scripts_with_ids(
 
     return results
 
+
 def _first_value(
     data: dict[str, Any],
     keys: tuple[str, ...],
@@ -169,6 +171,50 @@ def _first_value(
     return None
 
 
+def _has_product_metadata(
+    metadata: dict[str, str],
+) -> bool:
+    """
+    Return whether HTML metadata contains a product-specific signal.
+
+    A page title alone is not sufficient. Generic pages such as store
+    locators, navigation pages, category pages, and corporate landing pages
+    routinely expose og:title/twitter:title without representing a product.
+    """
+
+    product_specific_keys = (
+        "product:price:amount",
+        "product:price:currency",
+        "product:price",
+        "product:brand",
+        "product:sku",
+        "product:gtin",
+        "gtin",
+        "gtin13",
+        "gtin12",
+        "gtin14",
+        "sku",
+        "price",
+        "pricecurrency",
+        "brand",
+        "product:availability",
+        "og:type",
+    )
+
+    for key in product_specific_keys:
+        value = metadata.get(key)
+
+        if not value:
+            continue
+
+        if key == "og:type" and value.lower() != "product":
+            continue
+
+        return True
+
+    return False
+
+
 def extract_html_product(
     html: bytes | str,
     source_url: str,
@@ -176,7 +222,8 @@ def extract_html_product(
     """
     Extract a conservative product record from standard HTML metadata.
 
-    This intentionally requires a product name before producing a record.
+    A product name alone is insufficient. At least one independent
+    product-specific metadata signal must also be present.
     """
     metadata = extract_meta(html)
 
@@ -190,6 +237,9 @@ def extract_html_product(
     )
 
     if not product_name:
+        return None
+
+    if not _has_product_metadata(metadata):
         return None
 
     price = _first_value(
@@ -237,6 +287,15 @@ def extract_html_product(
         ),
     )
 
+    availability = _first_value(
+        metadata,
+        (
+            "product:availability",
+            "og:availability",
+            "availability",
+        ),
+    )
+
     return {
         "source_url": source_url,
         "product_name": product_name,
@@ -245,6 +304,7 @@ def extract_html_product(
         "sku": sku,
         "price": price,
         "currency": currency,
+        "availability": availability,
     }
 
 
