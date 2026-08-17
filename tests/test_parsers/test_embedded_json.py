@@ -119,3 +119,41 @@ def test_cross_script_dedupe():
     )
 
     assert len(result) == 1
+
+def test_product_with_item_id_is_accepted():
+    result = product_from_dict(
+        {
+            "name": "Organic Milk",
+            "itemId": "ITEM-123",
+        },
+        "https://example.com",
+    )
+
+    assert result is not None
+    assert result["product_name"] == "Organic Milk"
+
+
+def test_product_with_product_id_is_accepted():
+    result = product_from_dict(
+        {
+            "name": "Organic Milk",
+            "productId": "PRODUCT-123",
+        },
+        "https://example.com",
+    )
+
+    assert result is not None
+    assert result["product_name"] == "Organic Milk"
+
+
+def test_navigation_with_item_id_is_rejected():
+    result = product_from_dict(
+        {
+            "__typename": "NavigationV2ResponseBackedDefaultItemSection",
+            "name": "Products & Services",
+            "itemId": "navigation-123",
+        },
+        "https://example.com",
+    )
+
+    assert result is None

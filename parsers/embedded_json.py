@@ -23,6 +23,7 @@ PRODUCT_NAME_KEYS = (
     "name",
     "title",
     "displayName",
+    "display_name",
 )
 
 
@@ -41,12 +42,18 @@ GTIN_KEYS = (
     "gtin8",
     "upc",
     "upcCode",
+    "upc_code",
 )
 
 
 SKU_KEYS = (
     "sku",
     "itemNumber",
+    "item_number",
+    "itemId",
+    "item_id",
+    "productId",
+    "product_id",
 )
 
 
@@ -69,6 +76,29 @@ AVAILABILITY_KEYS = (
     "availability",
     "stockStatus",
     "inventoryStatus",
+)
+
+
+PRODUCT_SIGNAL_KEYS = (
+    "sku",
+    "itemNumber",
+    "item_number",
+    "itemId",
+    "item_id",
+    "productId",
+    "product_id",
+    "gtin",
+    "gtin12",
+    "gtin13",
+    "gtin14",
+    "gtin8",
+    "upc",
+    "upcCode",
+    "upc_code",
+    "price",
+    "currentPrice",
+    "salePrice",
+    "regularPrice",
 )
 
 
@@ -146,15 +176,6 @@ def _extract_nested_instacart_price(
 ) -> tuple[Any, Any]:
     """
     Extract the scalar price/currency from an Instacart item object.
-
-    Typical shape:
-
-        price.viewSection.itemCard.priceString
-
-    with fallbacks:
-
-        price.viewSection.itemCard.fullPriceString
-        price.viewSection.badge.trackingProperties.price
     """
     price_object = value.get("price")
 
@@ -296,6 +317,31 @@ def _has_nested_price_signal(
     return _scalar(nested_price)
 
 
+def _has_product_signal(
+    value: dict[str, Any],
+) -> bool:
+    """
+    Return whether the object contains an independent product signal.
+
+    A name/title by itself is deliberately insufficient.
+    """
+    for key in PRODUCT_SIGNAL_KEYS:
+        candidate = value.get(key)
+
+        if candidate not in (
+            None,
+            "",
+            [],
+            {},
+        ):
+            return True
+
+    if _has_nested_price_signal(value):
+        return True
+
+    return False
+
+
 def _has_allowed_typename(
     value: dict[str, Any],
 ) -> bool:
@@ -391,22 +437,16 @@ def _is_product_candidate(
     ):
         return False
 
-    # Explicit retailer/product model types are a strong signal.
     if _has_allowed_typename(value):
         return True
 
-    # The product predicate deliberately requires a second signal
-    # beyond name/title. SKU and price are independently sufficient.
     if sku not in (None, ""):
         return True
 
     if gtin not in (None, ""):
         return True
 
-    if _has_scalar_price_signal(value):
-        return True
-
-    if _has_nested_price_signal(value):
+    if _has_product_signal(value):
         return True
 
     return False
@@ -474,7 +514,6 @@ def product_from_dict(
         CURRENCY_KEYS,
     )
 
-    # Instacart's price field is an object rather than a scalar.
     if isinstance(
         value.get("price"),
         dict,
