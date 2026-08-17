@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote
@@ -49,7 +51,7 @@ def decode_json_script(
     for candidate in candidates:
         try:
             json.loads(candidate)
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, TypeError):
             continue
 
         return candidate
@@ -218,24 +220,56 @@ def write_jsonl(
     path: Path,
     products: list[dict[str, Any]],
 ) -> None:
+    """
+    Atomically replace the output JSONL.
+
+    The existing file is left untouched unless the complete new file has
+    been successfully written.
+    """
     path.parent.mkdir(
         parents=True,
         exist_ok=True,
     )
 
-    with path.open(
-        "w",
-        encoding="utf-8",
-    ) as handle:
-        for product in products:
-            handle.write(
-                json.dumps(
-                    product,
-                    ensure_ascii=False,
-                    default=str,
+    fd, temporary_name = tempfile.mkstemp(
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+    )
+
+    temporary_path = Path(temporary_name)
+
+    try:
+        with os.fdopen(
+            fd,
+            "w",
+            encoding="utf-8",
+        ) as handle:
+            for product in products:
+                handle.write(
+                    json.dumps(
+                        product,
+                        ensure_ascii=False,
+                        default=str,
+                    )
+                    + "\n"
                 )
-                + "\n"
-            )
+
+            handle.flush()
+            os.fsync(handle.fileno())
+
+        os.replace(
+            temporary_path,
+            path,
+        )
+
+    except Exception:
+        try:
+            temporary_path.unlink()
+        except FileNotFoundError:
+            pass
+
+        raise
 
 
 def main() -> int:
@@ -296,6 +330,7 @@ def main() -> int:
         return 1
 
     all_products: list[dict[str, Any]] = []
+    errors = 0
 
     print("=" * 80)
     print("OPEN GROCERY PARSER")
@@ -309,6 +344,8 @@ def main() -> int:
             products, stats = parse_html_file(path)
 
         except Exception as exc:
+            errors += 1
+
             print(
                 f"ERROR: {path.name}: {exc}",
                 file=sys.stderr,
@@ -335,6 +372,14 @@ def main() -> int:
             print(f"  raw product records: {len(products)}")
 
         print()
+
+    if errors:
+        print(
+            f"ERROR: {errors} of {len(files)} files failed; "
+            "output was not replaced.",
+            file=sys.stderr,
+        )
+        return 1
 
     # ---------------------------------------------------------------
     # Normalize
